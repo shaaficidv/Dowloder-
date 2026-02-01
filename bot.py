@@ -10,68 +10,65 @@ bot = telebot.TeleBot(API_TOKEN)
 
 # 2. DATABASE SETUP
 def setup_db():
-    conn = psycopg2.connect(DB_URL)
-    cursor = conn.cursor()
-    # Waxaan ku darnay 'lang' si dalka ama luuqadda loogu kaydiyo
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            uid BIGINT PRIMARY KEY, 
-            name TEXT, 
-            lang TEXT DEFAULT 'Lama dooran'
-        )
-    """)
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                uid BIGINT PRIMARY KEY, 
+                name TEXT, 
+                lang TEXT DEFAULT 'Lama dooran'
+            )
+        """)
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Database Error: {e}")
 
+# 3. HELPER FUNCTIONS
 def save_user(user_id, name):
-    conn = psycopg2.connect(DB_URL)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO users (uid, name) VALUES (%s, %s) ON CONFLICT (uid) DO NOTHING", (user_id, name))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO users (uid, name) VALUES (%s, %s) ON CONFLICT (uid) DO NOTHING", (user_id, name))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except: pass
 
 def update_lang(user_id, lang):
-    conn = psycopg2.connect(DB_URL)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET lang = %s WHERE uid = %s", (lang, user_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET lang = %s WHERE uid = %s", (lang, user_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except: pass
 
-# 3. COMMAND HANDLERS
+# 4. COMMAND HANDLERS
 @bot.message_handler(commands=['start'])
 def start(message):
     save_user(message.from_user.id, message.from_user.first_name)
-    welcome_text = (f"Asc **{message.from_user.first_name}**! 🔥\n\n"
-                    "Kusoo dhawaaw Dowloder- Bot.\n"
-                    "Isticmaal /Help si aad u ogaato sida aan u shaqeeyo.")
-    bot.reply_to(message, welcome_text, parse_mode="Markdown")
+    bot.reply_to(message, f"Asc {message.from_user.first_name}! Kusoo dhawaaw Dowloder- Bot. 🔥\nIsticmaal /Help si aad u ogaato sida aan u shaqeeyo.")
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    help_text = ("📖 **Sida loo isticmaalo bot-ka:**\n\n"
-                 "1. Ii soo dir link kasta (TikTok, IG, YT).\n"
-                 "2. /Lang - Dooro wadankaaga/luuqaddaada.\n"
-                 "3. /Rank - Arag tirada dadka isticmaala bot-ka.\n"
-                 "4. /Start - Bilow bot-ka mar kale.")
-    bot.reply_to(message, help_text, parse_mode="Markdown")
+    bot.reply_to(message, "📖 **Amarrada Bot-ka:**\n\n1. /Lang - Dooro dalkaaga\n2. /Rank - Arag tirada user-ka\n3. /Help - Caawinaad\n4. Ii soo dir link-ga video-ga aad rabto.", parse_mode="Markdown")
 
 @bot.message_handler(commands=['lang'])
 def lang_cmd(message):
     markup = types.InlineKeyboardMarkup()
-    btn1 = types.InlineKeyboardButton("Somalia 🇸🇴", callback_data="lang_Somalia")
-    btn2 = types.InlineKeyboardButton("Global 🌎", callback_data="lang_Global")
-    markup.add(btn1, btn2)
-    bot.send_message(message.chat.id, "Fadlan dooro wadankaaga ama luuqaddaada:", reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("Somalia 🇸🇴", callback_data="lang_Somalia"),
+               types.InlineKeyboardButton("Global 🌎", callback_data="lang_Global"))
+    bot.send_message(message.chat.id, "Fadlan dooro wadankaaga:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
 def callback_lang(call):
-    selected_lang = call.data.split('_')[1]
-    update_lang(call.from_user.id, selected_lang)
-    bot.answer_callback_query(call.id, f"Waxaad dooratay {selected_lang}")
-    bot.edit_message_text(f"✅ Dookhaaga waa la kaydiyey: **{selected_lang}**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    selected = call.data.split('_')[1]
+    update_lang(call.from_user.id, selected)
+    bot.edit_message_text(f"✅ Dookhaaga waxaa lagu kaydiyey: **{selected}**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
 @bot.message_handler(commands=['rank'])
 def rank_cmd(message):
@@ -81,10 +78,9 @@ def rank_cmd(message):
     total = cursor.fetchone()[0]
     cursor.close()
     conn.close()
-    bot.reply_to(message, f"📊 **Bot Rank:**\n\nWaxaa bot-ka isticmaalay **{total}** qof dhab ah. ✅", parse_mode="Markdown")
+    bot.reply_to(message, f"📊 **Bot Rank:**\n\nWaxaa bot-ka isticmaalay **{total}** qof dhab ah. ✅")
 
 if __name__ == "__main__":
     setup_db()
-    print("Bot is running...")
     bot.infinity_polling()
     
