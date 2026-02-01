@@ -1,71 +1,82 @@
 import telebot
+import psycopg2
 import os
 import yt_dlp
+import requests
 from telebot import types
 
-# 1. CONFIGURATION
-# Hubi in magacyadan ay sax ku yihiin Railway Settings
-API_TOKEN = os.environ.get('BOT_TOKEN')
+# CONFIGURATION
+# Token-ka halkan haku qorin, ku dar Railway Variables ahaan: BOT_TOKEN
+API_TOKEN = os.environ.get('BOT_TOKEN') 
+DB_URL = os.environ.get('DATABASE_URL') 
 bot = telebot.TeleBot(API_TOKEN)
 
-# 2. MEDIA ENGINE (Xallinta Slides-ka iyo Videos-ka)
+# --- [DATABASE CONNECTION - XALKA KAYDKA] ---
+def init_db():
+    conn = psycopg2.connect(DB_URL)
+    cur = conn.cursor()
+    # Waxaan sameyneynaa miisaska xogta (Users iyo Stats)
+    cur.execute('''CREATE TABLE IF NOT EXISTS users 
+                   (uid TEXT PRIMARY KEY, lang TEXT, last_url TEXT)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS stats 
+                   (id INT PRIMARY KEY, total_downloads INT DEFAULT 0)''')
+    cur.execute('INSERT INTO stats (id, total_downloads) SELECT 1, 0 WHERE NOT EXISTS (SELECT 1 FROM stats WHERE id = 1)')
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# --- [DOWNLOAD ENGINE - XALKA SAWIRRADA] ---
 def download_media(url):
     ydl_opts = {
-        'format': 'best',
-        'outtmpl': 'file_%(id)s.%(ext)s',
+        'extract_flat': False, # Kani waa xalka sawirrada TikTok Slideshow
+        'outtmpl': 'file_%(id)s_%(index)s.%(ext)s',
         'quiet': True,
-        'no_warnings': True,
-        'extract_flat': False, # Muhiim: Kani wuxuu soo saaraa sawirrada slides-ka ah
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.tiktok.com/',
-        }
+        'http_headers': {'User-Agent': 'Mozilla/5.0'}
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        
-        # Haddii uu yahay TikTok Photo Slide (Sawirro badan)
         if 'entries' in info:
             paths = [ydl.prepare_filename(e) for e in info['entries']]
             return paths, 'images'
-        
-        # Haddii uu yahay Video caadi ah
         path = ydl.prepare_filename(info)
-        return [path], info.get('ext', 'mp4')
+        return [path], 'video'
 
-# 3. MESSAGE HANDLER
-@bot.message_handler(func=lambda message: "http" in message.text)
-def handle_all(message):
-    # Jawaabta hordhaca ah ee aad codsatay
+# --- [HANDLERS] ---
+@bot.message_handler(func=lambda message: message.text.startswith("http"))
+def handle_link(message):
+    uid = str(message.from_user.id)
     sent_msg = bot.send_message(message.chat.id, "💣")
     
     try:
         paths, media_type = download_media(message.text)
         bot.delete_message(message.chat.id, sent_msg.message_id)
-
+        
         for p in paths:
-            # Hubi haddii file-ku yahay sawir ama video
-            if media_type == 'images' or any(ext in p.lower() for ext in ['.jpg', '.png', '.webp', '.jpeg']):
-                with open(p, 'rb') as photo:
-                    bot.send_photo(message.chat.id, photo, caption="Injoy 🔥 - @Shaaficibot")
-            else:
-                with open(p, 'rb') as video:
-                    bot.send_video(message.chat.id, video, caption="Injoy 🇸🇴🖤 - @Shaaficibot")
-            
-            # Tirtir file-ka markuu diro ka dib si uusan boosku u buuxsamin
+            with open(p, 'rb') as f:
+                if media_type == 'images' or any(p.lower().endswith(x) for x in ['.jpg', '.png', '.jpeg', '.webp']):
+                    bot.send_photo(message.chat.id, f)
+                else:
+                    bot.send_video(message.chat.id, f, caption="INJOY 🇸🇴 - @Shaaficibot")
             if os.path.exists(p):
                 os.remove(p)
-                
+        
+        # Update Stats gudaha PostgreSQL
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+        cur.execute('UPDATE stats SET total_downloads = total_downloads + 1 WHERE id = 1')
+        conn.commit()
+        cur.close()
+        conn.close()
+
     except Exception:
-        # Haddii link-gu khaldan yahay
-        bot.edit_message_text("Ist Brok Link Send Another 💔", message.chat.id, sent_msg.message_id)
+        bot.edit_message_text("It's Brok Link ! 💔", message.chat.id, sent_msg.message_id)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Asc! Ii soo dir link kasta (Video ama TikTok Photo Slide). 🎯")
+    bot.reply_to(message, "Asc! Ii soo dir Link si aan kuugu soo dejiyo Video ama Sawirro. 🎯")
 
 if __name__ == "__main__":
-    # Nidaamka looga hortago Conflict 409 ee logs-kaaga ku jiray
-    bot.remove_webhook()
+    init_db() 
+    bot.remove_webhook() # Si looga badbaado Conflict 409
     bot.infinity_polling(skip_pending=True)
     
