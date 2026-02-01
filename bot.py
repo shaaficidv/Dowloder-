@@ -3,32 +3,30 @@ import os
 import yt_dlp
 from telebot import types
 
-# 1. CONFIG
+# 1. CONFIGURATION
+# Hubi in magacyadan ay sax ku yihiin Railway Settings
 API_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# 2. MEDIA ENGINE (Si gaar ah loogu habeeyey Sawirada Slides-ka ah)
+# 2. MEDIA ENGINE (Xallinta Slides-ka iyo Videos-ka)
 def download_media(url):
     ydl_opts = {
         'format': 'best',
         'outtmpl': 'file_%(id)s.%(ext)s',
         'quiet': True,
         'no_warnings': True,
-        # Kani waa sirta lagu soo dejiyo sawirada slides-ka ah
-        'extract_flat': False, 
+        'extract_flat': False, # Muhiim: Kani wuxuu soo saaraa sawirrada slides-ka ah
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.tiktok.com/',
         }
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         
-        # Haddii uu yahay TikTok Slide (Sawirro badan)
+        # Haddii uu yahay TikTok Photo Slide (Sawirro badan)
         if 'entries' in info:
-            paths = []
-            for entry in info['entries']:
-                # Hubi in sawirka la soo dejiyey ka hor intaan liiska lagu darin
-                paths.append(ydl.prepare_filename(entry))
+            paths = [ydl.prepare_filename(e) for e in info['entries']]
             return paths, 'images'
         
         # Haddii uu yahay Video caadi ah
@@ -38,6 +36,7 @@ def download_media(url):
 # 3. MESSAGE HANDLER
 @bot.message_handler(func=lambda message: "http" in message.text)
 def handle_all(message):
+    # Jawaabta hordhaca ah ee aad codsatay
     sent_msg = bot.send_message(message.chat.id, "💣")
     
     try:
@@ -45,8 +44,8 @@ def handle_all(message):
         bot.delete_message(message.chat.id, sent_msg.message_id)
 
         for p in paths:
-            # Hubi haddii file-ka uu dhamaadkiisu yahay sawir
-            if media_type == 'images' or any(p.lower().endswith(ext) for ext in ['.jpg', '.png', '.webp', '.jpeg']):
+            # Hubi haddii file-ku yahay sawir ama video
+            if media_type == 'images' or any(ext in p.lower() for ext in ['.jpg', '.png', '.webp', '.jpeg']):
                 with open(p, 'rb') as photo:
                     bot.send_photo(message.chat.id, photo, caption="Injoy 🔥 - @Shaaficibot")
             else:
@@ -57,11 +56,16 @@ def handle_all(message):
             if os.path.exists(p):
                 os.remove(p)
                 
-    except Exception as e:
-        print(f"Error: {e}") # Kani wuxuu kuu tusayaa dhibka jira
+    except Exception:
+        # Haddii link-gu khaldan yahay
         bot.edit_message_text("Ist Brok Link Send Another 💔", message.chat.id, sent_msg.message_id)
 
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "Asc! Ii soo dir link kasta (Video ama TikTok Photo Slide). 🎯")
+
 if __name__ == "__main__":
+    # Nidaamka looga hortago Conflict 409 ee logs-kaaga ku jiray
     bot.remove_webhook()
     bot.infinity_polling(skip_pending=True)
     
