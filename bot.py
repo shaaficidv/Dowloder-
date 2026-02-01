@@ -5,12 +5,11 @@ import pymongo
 from flask import Flask
 from threading import Thread
 
-# --- [1. DATABASE CONNECTION FIXED] ---
-# Waxaan ku daray retryWrites=true si uusan Error u bixin
+# --- [1. DATABASE CONNECTION] ---
+# Link-gaaga MongoDB ee la saxay
 MONGO_LINK = "mongodb+srv://spprtshaafici_db_user:bbVaC28CI5sCffU4@cluster0.33hdtdi.mongodb.net/?retryWrites=true&w=majority"
 client = pymongo.MongoClient(MONGO_LINK)
 db = client['shafici_bot_db']
-stats_col = db['global_stats']
 users_col = db['registered_users']
 
 # --- [2. WEB SERVER SI RENDER UUSAN U DAMIN] ---
@@ -21,7 +20,7 @@ def home():
     return "Bot is Online 24/7!"
 
 def run():
-    # Render wuxuu u baahan yahay Port-kan si uusan u dhiman
+    # Render wuxuu u baahan yahay inuu Port ka helo halkan
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -30,29 +29,19 @@ def keep_alive():
     t.start()
 
 # --- [3. AMMAANKA TOKEN-KA] ---
-# Ka soo qaado Token-ka qaybta Environment ee Render
+# Token-ka ka soo qaado Render Environment Variables
 API_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# Geli ID-gaaga Telegram (Admin)
+# Geli ID-gaaga Telegram
 ADMIN_ID = 123456789 
-
-def update_stats(lang=None):
-    if not stats_col.find_one({"id": "main"}):
-        stats_col.insert_one({"id": "main", "total": 0, "countries": {}})
-    if lang:
-        stats_col.update_one({"id": "main"}, {"$inc": {f"countries.{lang}": 1}})
-    else:
-        stats_col.update_one({"id": "main"}, {"$inc": {"total": 1}})
 
 # --- [4. COMMANDS] ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    # Kaydi qofka cusub ee soo gala
     if not users_col.find_one({"uid": message.from_user.id}):
         users_col.insert_one({"uid": message.from_user.id, "name": message.from_user.first_name})
-    
-    bot.reply_to(message, f"Hi {message.from_user.first_name}! 🚀\nI am 24/7 Universal Downloader.\nSend me any link!")
+    bot.reply_to(message, f"Hi {message.from_user.first_name}! 🚀\nI am 24/7 Universal Downloader.")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast(message):
@@ -74,13 +63,10 @@ def handle_link(message):
     target = bot.send_message(message.chat.id, "🎯 Downloading...")
     try:
         output = f"vid_{message.from_user.id}.mp4"
-        # yt-dlp fix oo Pinterest iyo kuwa kale ah
         cmd = f'yt-dlp --no-playlist -f "b" -o "{output}" "{url}"'
         subprocess.run(cmd, shell=True, check=True)
         
-        update_stats()
         bot.delete_message(message.chat.id, target.message_id)
-        
         with open(output, 'rb') as f:
             bot.send_video(message.chat.id, f, caption="INJOY 🇸🇴 - @Shaaficibot")
         os.remove(output)
@@ -90,7 +76,7 @@ def handle_link(message):
 
 # --- [6. RUNNING] ---
 if __name__ == "__main__":
-    keep_alive() 
+    keep_alive() # Kani wuxuu furayaa Port-ka Render uu rabo
     print("Bot is starting on Render...")
     bot.infinity_polling()
     
