@@ -9,7 +9,7 @@ DB_URL = os.environ.get('DATABASE_URL')
 API_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# 1. MEDIA ENGINE (Xallinta TikTok Slides & Videos)
+# MEDIA ENGINE
 def download_media(url):
     ydl_opts = {
         'format': 'best',
@@ -22,38 +22,36 @@ def download_media(url):
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        # Haddii uu yahay TikTok Slide (sawiro badan)
-        if 'entries' in info:
+        if 'entries' in info: # Haddii uu yahay TikTok Slide
             paths = [ydl.prepare_filename(e) for e in info['entries']]
             return paths, 'images'
-        
         path = ydl.prepare_filename(info)
         return [path], info.get('ext', 'mp4')
 
-# 2. PROCESSING LINKS
+# HANDLING LINKS
 @bot.message_handler(func=lambda message: "http" in message.text)
 def handle_all(message):
     url = message.text
     sent_msg = bot.send_message(message.chat.id, "💣")
-    
     try:
-        paths, media_type = download_media(url)
+        paths, m_type = download_media(url)
         bot.delete_message(message.chat.id, sent_msg.message_id)
-
         for p in paths:
-            if media_type == 'images' or any(ext in p for ext in ['.jpg', '.png', '.webp']):
+            if m_type == 'images' or any(ext in p for ext in ['.jpg', '.png', '.webp']):
                 with open(p, 'rb') as photo:
                     bot.send_photo(message.chat.id, photo, caption="Injoy 🔥 - @Shaaficibot")
             else:
                 with open(p, 'rb') as video:
                     bot.send_video(message.chat.id, video, caption="Injoy 🇸🇴🖤 - @Shaaficibot")
-            os.remove(p) # Tirtir markuu diro ka dib
-            
-    except Exception:
+            os.remove(p)
+    except:
         bot.edit_message_text("Ist Brok Link Send Another 💔", message.chat.id, sent_msg.message_id)
 
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "Asc! Ii soo dir link-ga video ama sawir kasta. 🎯")
+
 if __name__ == "__main__":
-    # Xalka Conflict-ka Logs-kaaga
-    bot.remove_webhook()
+    bot.remove_webhook() # Xalka Conflict-ka 409
     bot.infinity_polling(skip_pending=True)
     
