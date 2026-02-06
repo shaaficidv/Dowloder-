@@ -1,5 +1,5 @@
 import os
-import yt_dlp
+import requests
 import psycopg2
 from telegram import Update, InputMediaPhoto
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -9,72 +9,60 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- DATABASE SETUP ---
 def init_db():
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-    cur = conn.cursor()
-    cur.execute('CREATE TABLE IF NOT EXISTS users (user_id BIGINT PRIMARY KEY, count INT DEFAULT 0)')
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cur = conn.cursor()
+        cur.execute('CREATE TABLE IF NOT EXISTS users (user_id BIGINT PRIMARY KEY, count INT DEFAULT 0)')
+        conn.commit()
+        cur.close()
+        conn.close()
+    except: pass
 
-# --- SOO DEJINTA ---
+# --- TIKTOK API FUNCTION ---
+def get_tiktok_data(url):
+    api_url = f"https://www.tikwm.com/api/?url={url}"
+    response = requests.get(api_url).json()
+    return response.get('data')
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
-    if not url.startswith("http"): return
+    if "tiktok.com" not in url:
+        await update.message.reply_text("Fadlan soo dir link TikTok ah oo sax ah.")
+        return
     
-    msg = await update.message.reply_text("🔄 Baaritaan ayaan ku jiraa...")
+    msg = await update.message.reply_text("🚀 Baaritaan ayaan ku jiraa...")
 
-    # Folder ku-meel-gaar ah
-    download_dir = f"downloads/{update.effective_user.id}"
-    if not os.path.exists(download_dir): os.makedirs(download_dir)
-
-    ydl_opts = {
-        'outtmpl': f'{download_dir}/%(id)s_%(now)s.%(ext)s',
-        'quiet': True,
-        'noplaylist': True,
-    }
+    data = get_tiktok_data(url)
+    
+    if not data:
+        await msg.edit_text("❌ Khalad: Link-ga lama helin ama waa laga saaray TikTok.")
+        return
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        # 1. HADDII UU YAHAY SLIDESHOW (SAWIRRO)
+        if 'images' in data:
+            images = data['images']
+            media_group = []
+            for img in images[:10]: # Telegram wuxuu ogol yahay 10 sawir
+                media_group.append(InputMediaPhoto(img))
             
-            # Soo qaado dhammaan faylasha galka ku jira
-            files = [os.path.join(download_dir, f) for f in os.listdir(download_dir)]
-            
-            if not files:
-                await msg.edit_text("❌ Waxba lama helin.")
-                return
+            await update.message.reply_media_group(media=media_group)
+            await msg.delete()
 
-            # Haddii ay yihiin sawirro badan (TikTok Slideshow)
-            if len(files) > 1:
-                media_group = []
-                for f in files[:10]: # Telegram wuxuu ogol yahay 10 sawir hal mar
-                    if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
-                        media_group.append(InputMediaPhoto(open(f, 'rb')))
-                
-                await update.message.reply_media_group(media=media_group)
-                await msg.delete()
-            
-            # Haddii uu yahay hal Video ama hal Sawir
-            else:
-                file_path = files[0]
-                with open(file_path, 'rb') as f:
-                    if file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
-                        await update.message.reply_photo(photo=f)
-                    else:
-                        await update.message.reply_video(video=f)
-                await msg.delete()
-
-            # Nadiifi galka (Delete files)
-            for f in files: os.remove(f)
-            os.rmdir(download_dir)
+        # 2. HADDII UU YAHAY VIDEO
+        else:
+            video_url = data.get('play') # Video aan lahayn Watermark
+            await update.message.reply_video(video=video_url, caption="✅ Video-gaaga waa diyaar!")
+            await msg.delete()
 
     except Exception as e:
-        await msg.edit_text(f"❌ Khalad: {str(e)}")
+        await msg.edit_text(f"❌ Khalad ayaa dhacay: {str(e)}")
 
 def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("Bot-kii waa kacay! (TikTok API Mode)")
     app.run_polling()
 
 if __name__ == '__main__':
