@@ -1,4 +1,4 @@
-python-telegram-bot
+python-telegram-bot==20.8
 yt-dlp>=2025.01.15
 requests
 psycopg2-binary
