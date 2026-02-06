@@ -12,25 +12,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def init_db():
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cur = conn.cursor()
-    # Table-ka User-ka (ID, Name, Downloads, Country)
     cur.execute('''CREATE TABLE IF NOT EXISTS users (
         user_id BIGINT PRIMARY KEY, 
         username TEXT, 
         user_downloads INT DEFAULT 0,
         country TEXT DEFAULT 'Unknown'
     )''')
-    # Table-ka Global Downloads
     cur.execute('CREATE TABLE IF NOT EXISTS global_stats (total_downloads INT DEFAULT 0)')
     cur.execute('INSERT INTO global_stats (total_downloads) SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM global_stats)')
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# --- HELPER FUNCTIONS ---
-def update_user(user_id, username):
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-    cur = conn.cursor()
-    cur.execute("INSERT INTO users (user_id, username) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username", (user_id, username))
     conn.commit()
     cur.close()
     conn.close()
@@ -44,73 +33,74 @@ def add_download(user_id):
     cur.close()
     conn.close()
 
-# --- BOT COMMANDS ---
+# --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    update_user(user.id, user.first_name)
+    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (user_id, username) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username", (user.id, user.first_name))
+    conn.commit()
+    cur.close()
+    conn.close()
     await update.message.reply_text(f"Hi {user.first_name} Send Only Link ; 🔗")
 
 async def rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cur = conn.cursor()
-    # Wadarta guud
     cur.execute("SELECT total_downloads FROM global_stats")
     total = cur.fetchone()[0]
-    # Xogta User-ka iyo Rank-giisa
     cur.execute("""
         SELECT user_downloads, country, 
         (SELECT COUNT(*) + 1 FROM users u2 WHERE u2.user_downloads > u1.user_downloads) as rank
         FROM users u1 WHERE user_id = %s
     """, (update.effective_user.id,))
     res = cur.fetchone()
-    
-    # Top 10 Countries
     cur.execute("SELECT country, COUNT(*) FROM users WHERE country != 'Unknown' GROUP BY country ORDER BY COUNT(*) DESC LIMIT 10")
     top_c = cur.fetchall()
     country_list = "\n".join([f"{i+1}. {c[0]}: {c[1]}" for i, c in enumerate(top_c)])
-
-    text = (f"📊 **Rank Statistics**\n\n"
-            f"Total Bot Downloads: {total}\n"
+    
+    text = (f"📊 **Rank Statistics**\n\nTotal Bot Downloads: {total}\n"
             f"Your Downloads: {res[0] if res else 0}\n"
-            f"Your Country: {res[1] if res else 'Unknown'}\n"
             f"Your Rank: #{res[2] if res else '?'}\n\n"
             f"🌍 **Top 10 Countries:**\n{country_list if country_list else 'No data yet'}")
     await update.message.reply_text(text, parse_mode='Markdown')
 
-async def lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    countries = ["Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Turkey 🇹🇷", "UAE 🇦🇪", "Germany 🇩🇪", "Norway 🇳🇴", "Canada 🇨🇦", "Djibouti 🇩🇯"]
-    keyboard = [ [InlineKeyboardButton(countries[i], callback_data=f"ln_{countries[i]}"), 
-                  InlineKeyboardButton(countries[i+1], callback_data=f"ln_{countries[i+1]}")] 
-                for i in range(0, len(countries), 2) ]
-    await update.message.reply_text("Dooro Wadankaaga:", reply_markup=InlineKeyboardMarkup(keyboard))
-
+# --- AUDIO EXTRACTOR LOGIC ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data.startswith('ln_'):
-        c = query.data.split('_')[1]
-        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-        cur = conn.cursor()
-        cur.execute("UPDATE users SET country = %s WHERE user_id = %s", (c, query.from_user.id))
-        conn.commit()
-        cur.close()
-        conn.close()
-        await query.edit_message_text(f"Wadankaaga: {c} ✅")
+    
+    if query.data.startswith('au_'):
+        url = query.data.split('_', 1)[1]
+        msg = await query.message.reply_text("🎙️ Waxaan soo saarayaa codka... fadlan sug.")
+        
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': 'downloads/%(id)s.%(ext)s',
+            'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}],
+        }
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                audio_path = ydl.prepare_filename(info).rsplit('.', 1)[0] + ".mp3"
+                with open(audio_path, 'rb') as f:
+                    await query.message.reply_audio(audio=f, caption="For You 🎙️ - @Fastdowloder1bot")
+                os.remove(audio_path)
+            await msg.delete()
+        except:
+            await msg.edit_text("❌ Codka lama soo saari karo.")
 
-# --- MAIN DOWNLOAD LOGIC ---
 async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if not url.startswith("http"):
         kb = [[InlineKeyboardButton("Developers - @Guspirrr", url="https://t.me/Guspirrr")]]
-        await update.message.reply_text(f"Hi {update.effective_user.first_name} I accepted Only Link any Help and Problema Content team 🖤", reply_markup=InlineKeyboardMarkup(kb))
+        await update.message.reply_text(f"Hi {update.effective_user.first_name} I accepted Only Link...", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     wait = await update.message.reply_text("🫦")
     add_download(update.effective_user.id)
-
-    # Keyboard buttons
-    kb = [[InlineKeyboardButton("Audio 🎙️", callback_data=f"au_{url}")],
-          [InlineKeyboardButton("Community 🌋", url="https://t.me/cummunutry1")]]
+    kb = [[InlineKeyboardButton("Audio 🎙️", callback_data=f"au_{url}")], [InlineKeyboardButton("Community 🌋", url="https://t.me/cummunutry1")]]
 
     try:
         if "tiktok.com" in url:
@@ -119,18 +109,14 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 imgs = [InputMediaPhoto(i) for i in data['images'][:10]]
                 await update.message.reply_media_group(media=imgs, caption="For You 🎁")
                 if data.get('music'): await update.message.reply_audio(audio=data['music'], caption="For You 🎁")
-                await wait.delete()
-                return
-            video = data.get('play')
-            await update.message.reply_video(video=video, caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await update.message.reply_video(video=data.get('play'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
         else:
-            # Universal Downloader
             ydl_opts = {'format': 'best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'quiet': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 path = ydl.prepare_filename(info)
-                with open(path, 'rb') as f:
-                    await update.message.reply_video(video=f, caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
+                await update.message.reply_video(video=open(path, 'rb'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
                 os.remove(path)
         await wait.delete()
     except:
@@ -142,10 +128,9 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("rank", rank))
-    app.add_handler(CommandHandler("lang", lang))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_media))
     app.run_polling()
 
 if __name__ == '__main__': main()
-    
+            
