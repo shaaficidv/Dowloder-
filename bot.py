@@ -46,7 +46,12 @@ async def lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Hore ayaad wadan u dooratay! ⚠️")
         return
 
-    countries = ["Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Ethiopia 🇪🇹", "Turkey 🇹🇷", "UAE 🇦🇪", "Egypt 🇪🇬", "Canada 🇨🇦", "Norway 🇳🇴", "Sweden 🇸🇪", "Germany 🇩🇪", "France 🇫🇷", "India 🇮🇳", "China 🇨🇳", "Brazil 🇧🇷", "Qatar 🇶🇦", "S.Arabia 🇸🇦", "Djibouti 🇩🇯", "Italy 🇮🇹", "Spain 🇪🇸", "Russia 🇷🇺", "Japan JP", "S.Korea 🇰🇷", "Australia 🇦🇺", "Nigeria 🇳🇬", "S.Africa 🇿🇦", "Uganda 🇺🇬", "Tanzania 🇹🇿", "Sudan 🇸🇩", "Pakistan 🇵🇰", "Mexico 🇲🇽", "Finland 🇫🇮", "Denmark 🇩🇰", "Oman 🇴🇲", "Kuwait 🇰🇼", "Yemen 🇾🇪", "Libya 🇱🇾", "Morocco 🇲🇦", "Netherlands 🇳🇱"]
+    countries = [
+        "Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Ethiopia 🇪🇹", "Turkey 🇹🇷", "UAE 🇦🇪", "Egypt 🇪🇬", "Canada 🇨🇦", "Norway 🇳🇴",
+        "Sweden 🇸🇪", "Germany 🇩🇪", "France 🇫🇷", "India 🇮🇳", "China 🇨🇳", "Brazil 🇧🇷", "Qatar 🇶🇦", "S.Arabia 🇸🇦", "Djibouti 🇩🇯", "Italy 🇮🇹",
+        "Spain 🇪🇸", "Russia 🇷🇺", "Japan 🇯🇵", "S.Korea 🇰🇷", "Australia 🇦🇺", "Nigeria 🇳🇬", "S.Africa 🇿🇦", "Uganda 🇺🇬", "Tanzania 🇹🇿", "Sudan 🇸🇩",
+        "Pakistan 🇵🇰", "Mexico 🇲🇽", "Finland 🇫🇮", "Denmark 🇩🇰", "Oman 🇴🇲", "Kuwait 🇰🇼", "Yemen 🇾🇪", "Libya 🇱🇾", "Morocco 🇲🇦", "Netherlands 🇳🇱"
+    ]
     keyboard = [[InlineKeyboardButton(countries[i], callback_data=f"ln_{countries[i]}"), 
                   InlineKeyboardButton(countries[i+1], callback_data=f"ln_{countries[i+1]}")] for i in range(0, len(countries), 2)]
     await update.message.reply_text("Dooro Wadankaaga (Hal mar):", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -66,10 +71,10 @@ async def rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     country_list = "\n".join([f"{i+1}. {c[0]}: {c[1]}" for i, c in enumerate(top_c)])
-    rank_text = (f"📊 **Rank Statistics**\n\n🎥 Total Video Upload: {total_dl}\n👤 Total Users: {total_users}\n📥 Your Downloads: {res[0] if res else 0}\n🏆 Your Rank: #{res[2] if res else '?'}\n📍 Country: {res[1] if res else 'Unknown'}\n\n🌍 **Top 10 Countries:**\n{country_list}")
+    rank_text = (f"📊 **Statistics**\n\n🎥 Total Upload: {total_dl}\n👤 Total Users: {total_users}\n📥 Your Downloads: {res[0] if res else 0}\n🏆 Your Rank: #{res[2] if res else '?'}\n📍 Country: {res[1] if res else 'Unknown'}\n\n🌍 **Top 10 Countries:**\n{country_list}")
     await update.message.reply_text(rank_text, parse_mode='Markdown')
 
-# --- CALLBACKS (Audio & Lang) ---
+# --- CALLBACK HANDLING ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -81,7 +86,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         cur.close()
         conn.close()
-        await query.edit_message_text(f"Wadankaaga waxaa loo daray: {c} ✅")
+        await query.edit_message_text(f"Wadankaaga: {c} ✅")
     
     elif query.data.startswith('au_'):
         url = query.data.split('_', 1)[1]
@@ -94,20 +99,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_audio(audio=open(path, 'rb'), caption="For You 🎙️ - @Fastdowloder1bot")
                 os.remove(path)
             await m.delete()
-        except Exception as e:
-            await m.edit_text(f"❌ Codka lama soo saari karo.")
+        except: await m.edit_text("❌ Audio Error.")
 
-# --- UNIVERSAL DOWNLOADER ---
+# --- CORE DOWNLOADER ---
 async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
-    if not url.startswith("http"):
-        return
-
-    wait = await update.message.reply_text("⚡")
+    if not url.startswith("http"): return
+    wait = await update.message.reply_text("🫦")
     kb = [[InlineKeyboardButton("Audio 🎙️", callback_data=f"au_{url}")], [InlineKeyboardButton("Community 🌋", url="https://t.me/cummunutry1")]]
 
     try:
-        # TIKTOK (Video & Image Support)
+        # TIKTOK SUPPORT
         if "tiktok.com" in url:
             data = requests.get(f"https://www.tikwm.com/api/?url={url}").json().get('data')
             if 'images' in data:
@@ -115,8 +117,7 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_media_group(media=imgs, caption="For You 🎁")
             else:
                 await update.message.reply_video(video=data.get('play'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
-        
-        # UNIVERSAL (FB, IG, YT, X)
+        # UNIVERSAL SUPPORT (FB, IG, YT, X)
         else:
             ydl_opts = {'format': 'best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'quiet': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -125,7 +126,7 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_video(video=open(path, 'rb'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
                 os.remove(path)
         
-        # Update Stats
+        # Stats Update
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cur = conn.cursor()
         cur.execute("UPDATE users SET user_downloads = user_downloads + 1 WHERE user_id = %s", (update.effective_user.id,))
@@ -134,8 +135,7 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.close()
         conn.close()
         await wait.delete()
-    except:
-        await wait.edit_text("Ist Brok Link ! 🤥")
+    except: await wait.edit_text("Ist Brok Link ! 🤥")
 
 def main():
     if not os.path.exists('downloads'): os.makedirs('downloads')
