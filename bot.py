@@ -1,64 +1,80 @@
 import os
 import yt_dlp
-import asyncio
-from telegram import Update
+import psycopg2
+from telegram import Update, InputMediaPhoto
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-# Token-kaaga ka soo qaado Railway Environment Variables
 TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- DATABASE SETUP ---
+def init_db():
+    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    cur = conn.cursor()
+    cur.execute('CREATE TABLE IF NOT EXISTS users (user_id BIGINT PRIMARY KEY, count INT DEFAULT 0)')
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# --- SOO DEJINTA ---
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
-    # Hubi inuu yahay link sax ah
-    if not url.startswith("http"):
-        return
+    if not url.startswith("http"): return
+    
+    msg = await update.message.reply_text("🔄 Baaritaan ayaan ku jiraa...")
 
-    msg = await update.message.reply_text("🔎 Baaritaan ayaan ku jiraa... fadlan sug.")
+    # Folder ku-meel-gaar ah
+    download_dir = f"downloads/{update.effective_user.id}"
+    if not os.path.exists(download_dir): os.makedirs(download_dir)
 
-    # Habaynta yt-dlp
     ydl_opts = {
-        'format': 'best', # Wuxuu soo dejinayaa tayada ugu fiican
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-        'noplaylist': True,
+        'outtmpl': f'{download_dir}/%(id)s_%(now)s.%(ext)s',
         'quiet': True,
+        'noplaylist': True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Soo saar macluumaadka link-ga
             info = ydl.extract_info(url, download=True)
-            file_path = ydl.prepare_filename(info)
             
-            await msg.edit_text("🚀 Soo dejintii waa dhammaatay, hadda ayaan kuu soo dirayaa...")
+            # Soo qaado dhammaan faylasha galka ku jira
+            files = [os.path.join(download_dir, f) for f in os.listdir(download_dir)]
+            
+            if not files:
+                await msg.edit_text("❌ Waxba lama helin.")
+                return
 
-            # Hubi haddii uu yahay Video ama Sawir
-            ext = info.get('ext', '').lower()
+            # Haddii ay yihiin sawirro badan (TikTok Slideshow)
+            if len(files) > 1:
+                media_group = []
+                for f in files[:10]: # Telegram wuxuu ogol yahay 10 sawir hal mar
+                    if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                        media_group.append(InputMediaPhoto(open(f, 'rb')))
+                
+                await update.message.reply_media_group(media=media_group)
+                await msg.delete()
             
-            if ext in ['jpg', 'jpeg', 'png', 'webp']:
-                with open(file_path, 'rb') as photo:
-                    await update.message.reply_photo(photo=photo, caption="Halkan waa sawirkaagii ✅")
+            # Haddii uu yahay hal Video ama hal Sawir
             else:
-                with open(file_path, 'rb') as video:
-                    await update.message.reply_video(video=video, caption="Halkan waa muuqaalkaagii ✅")
+                file_path = files[0]
+                with open(file_path, 'rb') as f:
+                    if file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                        await update.message.reply_photo(photo=f)
+                    else:
+                        await update.message.reply_video(video=f)
+                await msg.delete()
 
-            # Iska tirtir faylka si uusan Railway u buuxismin
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            await msg.delete()
+            # Nadiifi galka (Delete files)
+            for f in files: os.remove(f)
+            os.rmdir(download_dir)
 
     except Exception as e:
-        await msg.edit_text(f"❌ Khalad: Link-gan lama taageero ama dhib ayaa ka jira meesha laga soo dejinayo.")
-        print(f"Error: {e}")
+        await msg.edit_text(f"❌ Khalad: {str(e)}")
 
 def main():
-    # Hubi in galka downloads uu jiro
-    if not os.path.exists('downloads'):
-        os.makedirs('downloads')
-        
+    init_db()
     app = Application.builder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_media))
-    
-    print("Bot-ku hadda waa shaqaynayaa...")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling()
 
 if __name__ == '__main__':
