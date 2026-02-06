@@ -25,8 +25,9 @@ def init_db():
     cur.close()
     conn.close()
 
-# --- COMMANDS: START, LANG, RANK ---
+# --- COMMANDS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    init_db()
     user = update.effective_user
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cur = conn.cursor()
@@ -34,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     cur.close()
     conn.close()
-    await update.message.reply_text(f"Hi {user.first_name}! Send me ANY link (Video or Images) ; 🔗")
+    await update.message.reply_text(f"Welcome {user.first_name}! Send me any link (Video or Photos) from IG, FB, YT, or TikTok. 🔗")
 
 async def lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -46,15 +47,9 @@ async def lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Hore ayaad wadan u dooratay! ⚠️")
         return
 
-    countries = [
-        "Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Ethiopia 🇪🇹", "Turkey 🇹🇷", "UAE 🇦🇪", "Egypt 🇪🇬", "Canada 🇨🇦", "Norway 🇳🇴",
-        "Sweden 🇸🇪", "Germany 🇩🇪", "France 🇫🇷", "India 🇮🇳", "China 🇨🇳", "Brazil 🇧🇷", "Qatar 🇶🇦", "S.Arabia 🇸🇦", "Djibouti 🇩🇯", "Italy 🇮🇹",
-        "Spain 🇪🇸", "Russia 🇷🇺", "Japan 🇯🇵", "S.Korea 🇰🇷", "Australia 🇦🇺", "Nigeria 🇳🇬", "S.Africa 🇿🇦", "Uganda 🇺🇬", "Tanzania 🇹🇿", "Sudan 🇸🇩",
-        "Pakistan 🇵🇰", "Mexico 🇲🇽", "Finland 🇫🇮", "Denmark 🇩🇰", "Oman 🇴🇲", "Kuwait 🇰🇼", "Yemen 🇾🇪", "Libya 🇱🇾", "Morocco 🇲🇦", "Netherlands 🇳🇱"
-    ]
-    keyboard = [[InlineKeyboardButton(countries[i], callback_data=f"ln_{countries[i]}"), 
-                  InlineKeyboardButton(countries[i+1], callback_data=f"ln_{countries[i+1]}")] for i in range(0, len(countries), 2)]
-    await update.message.reply_text("Dooro Wadankaaga (Hal mar):", reply_markup=InlineKeyboardMarkup(keyboard))
+    countries = ["Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Ethiopia 🇪🇹", "Turkey 🇹🇷", "UAE 🇦🇪", "Egypt 🇪🇬", "Canada 🇨🇦", "Norway 🇳🇴", "Sweden 🇸🇪", "Germany 🇩🇪", "France 🇫🇷", "India 🇮🇳", "China 🇨🇳", "Brazil 🇧🇷", "Qatar 🇶🇦", "S.Arabia 🇸🇦", "Djibouti 🇩🇯", "Italy 🇮🇹", "Spain 🇪🇸", "Russia 🇷🇺", "Japan 🇯🇵", "S.Korea 🇰🇷", "Australia 🇦🇺", "Nigeria 🇳🇬", "S.Africa 🇿🇦", "Uganda 🇺🇬", "Tanzania 🇹🇿", "Sudan 🇸🇩", "Pakistan 🇵🇰", "Mexico 🇲🇽", "Finland 🇫🇮", "Denmark 🇩🇰", "Oman 🇴🇲", "Kuwait 🇰🇼", "Yemen 🇾🇪", "Libya 🇱🇾", "Morocco 🇲🇦", "Netherlands 🇳🇱"]
+    keyboard = [[InlineKeyboardButton(countries[i], callback_data=f"ln_{countries[i]}"), InlineKeyboardButton(countries[i+1], callback_data=f"ln_{countries[i+1]}")] for i in range(0, len(countries), 2)]
+    await update.message.reply_text("Dooro Wadankaaga:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -63,50 +58,51 @@ async def rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_dl = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM users")
     total_users = cur.fetchone()[0]
-    cur.execute("SELECT user_downloads, country, (SELECT COUNT(*) + 1 FROM users u2 WHERE u2.user_downloads > u1.user_downloads) FROM users u1 WHERE user_id = %s", (update.effective_user.id,))
+    cur.execute("SELECT user_downloads, country FROM users WHERE user_id = %s", (update.effective_user.id,))
     res = cur.fetchone()
-    cur.execute("SELECT country, COUNT(*) FROM users WHERE country != 'Unknown' GROUP BY country ORDER BY COUNT(*) DESC LIMIT 10")
-    top_c = cur.fetchall()
     cur.close()
     conn.close()
+    
+    text = f"📊 **Bot Stats**\n\n🎥 Total Downloads: {total_dl}\n👤 Total Users: {total_users}\n📥 Your Downloads: {res[0] if res else 0}\n📍 Your Country: {res[1] if res else 'Unknown'}"
+    await update.message.reply_text(text, parse_mode='Markdown')
 
-    country_list = "\n".join([f"{i+1}. {c[0]}: {c[1]}" for i, c in enumerate(top_c)])
-    rank_text = (f"📊 **Statistics**\n\n🎥 Total Upload: {total_dl}\n👤 Total Users: {total_users}\n📥 Your Downloads: {res[0] if res else 0}\n🏆 Your Rank: #{res[2] if res else '?'}\n📍 Country: {res[1] if res else 'Unknown'}\n\n🌍 **Top 10 Countries:**\n{country_list}")
-    await update.message.reply_text(rank_text, parse_mode='Markdown')
-
-# --- DOWNLOADER CORE: VIDEOS & IMAGES ---
+# --- UNIVERSAL DOWNLOADER ---
 async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if not url.startswith("http"): return
     wait = await update.message.reply_text("⚡ Processing...")
+    
     kb = [[InlineKeyboardButton("Audio 🎙️", callback_data=f"au_{url}")], [InlineKeyboardButton("Community 🌋", url="https://t.me/cummunutry1")]]
 
     try:
-        # 1. TIKTOK & UNIVERSAL IMAGES (API Method)
-        if "tiktok.com" in url or "instagram.com" in url:
-            api_url = f"https://www.tikwm.com/api/?url={url}"
-            data = requests.get(api_url).json().get('data')
-            if data and 'images' in data:
-                imgs = [InputMediaPhoto(i) for i in data['images'][:10]]
-                await update.message.reply_media_group(media=imgs, caption="For You 🎁 - @Fastdowloder1bot")
-                await wait.delete()
-                return
+        # 1. PHOTOS & REELS (API Method - TikTok/Instagram)
+        api_res = requests.get(f"https://www.tikwm.com/api/?url={url}").json()
+        data = api_res.get('data')
+        
+        if data and 'images' in data:
+            imgs = [InputMediaPhoto(img) for img in data['images'][:10]]
+            await update.message.reply_media_group(media=imgs, caption="Downloaded Photos 🎁")
+            await wait.delete()
+        elif data and (data.get('play') or data.get('wmplay')):
+            v_url = data.get('play') or data.get('wmplay')
+            await update.message.reply_video(video=v_url, caption="Done ✅", reply_markup=InlineKeyboardMarkup(kb))
+            await wait.delete()
+        else:
+            # 2. YT-DLP Method (For everything else: FB, YT, etc.)
+            ydl_opts = {
+                'format': 'best',
+                'outtmpl': 'downloads/%(id)s.%(ext)s',
+                'quiet': True,
+                'headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36'}
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                path = ydl.prepare_filename(info)
+                await update.message.reply_video(video=open(path, 'rb'), caption="Done ✅", reply_markup=InlineKeyboardMarkup(kb))
+                os.remove(path)
+            await wait.delete()
 
-        # 2. UNIVERSAL VIDEO DOWNLOADER (yt-dlp)
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': 'downloads/%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            path = ydl.prepare_filename(info)
-            await update.message.reply_video(video=open(path, 'rb'), caption=f"✅ {info.get('title', 'Done')} \n\n🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
-            os.remove(path)
-
-        # Update Database
+        # Update Stats
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cur = conn.cursor()
         cur.execute("UPDATE users SET user_downloads = user_downloads + 1 WHERE user_id = %s", (update.effective_user.id,))
@@ -114,11 +110,11 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         cur.close()
         conn.close()
-        await wait.delete()
-    except Exception:
-        await wait.edit_text("❌ Link Error! Hubi inuu yahay Link sax ah.")
 
-# --- CALLBACK HANDLING (Audio & Lang) ---
+    except:
+        await wait.edit_text("❌ Link Error or Platform not supported.")
+
+# --- CALLBACKS ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -131,23 +127,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.close()
         conn.close()
         await query.edit_message_text(f"Wadankaaga: {c} ✅")
-    
     elif query.data.startswith('au_'):
         url = query.data.split('_', 1)[1]
-        m = await query.message.reply_text("🎙️ Audio Extraction...")
+        m = await query.message.reply_text("🎙️ Extracting Audio...")
         ydl_opts = {'format': 'bestaudio/best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}]}
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 path = ydl.prepare_filename(info).rsplit('.', 1)[0] + ".mp3"
-                await query.message.reply_audio(audio=open(path, 'rb'), caption="Audio Extracted ✅")
+                await query.message.reply_audio(audio=open(path, 'rb'))
                 os.remove(path)
             await m.delete()
         except: await m.edit_text("❌ Audio Error.")
 
 def main():
     if not os.path.exists('downloads'): os.makedirs('downloads')
-    init_db()
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("lang", lang))
@@ -157,4 +151,4 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__': main()
-        
+    
