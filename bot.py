@@ -10,7 +10,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- DATABASE SETUP ---
 def init_db():
-    # Kani wuxuu si toos ah ugu xirmayaa Database-kaaga Railway
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -47,7 +46,7 @@ async def lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Hore ayaad wadan u dooratay! ⚠️")
         return
 
-    countries = ["Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Ethiopia 🇪🇹", "Turkey 🇹🇷", "UAE 🇦🇪", "Egypt 🇪🇬", "Canada 🇨🇦", "Norway 🇳🇴", "Sweden 🇸🇪", "Germany 🇩🇪", "France 🇫🇷", "India 🇮🇳", "China 🇨🇳", "Brazil 🇧🇷", "Qatar 🇶🇦", "S.Arabia 🇸🇦", "Djibouti 🇩🇯", "Italy 🇮🇹", "Spain 🇪🇸", "Russia 🇷🇺", "Japan 🇯🇵", "S.Korea 🇰🇷", "Australia 🇦🇺", "Nigeria 🇳🇬", "S.Africa 🇿🇦", "Uganda 🇺🇬", "Tanzania 🇹🇿", "Sudan 🇸🇩", "Pakistan 🇵🇰", "Mexico 🇲🇽", "Finland 🇫🇮", "Denmark 🇩🇰", "Oman 🇴🇲", "Kuwait 🇰🇼", "Yemen 🇾🇪", "Libya 🇱🇾", "Morocco 🇲🇦", "Netherlands 🇳🇱"]
+    countries = ["Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Ethiopia 🇪🇹", "Turkey 🇹🇷", "UAE 🇦🇪", "Egypt 🇪🇬", "Canada 🇨🇦", "Norway 🇳🇴", "Sweden 🇸🇪", "Germany 🇩🇪", "France 🇫🇷", "India 🇮🇳", "China 🇨🇳", "Brazil 🇧🇷", "Qatar 🇶🇦", "S.Arabia 🇸🇦", "Djibouti 🇩🇯", "Italy 🇮🇹", "Spain 🇪🇸", "Russia 🇷🇺", "Japan JP", "S.Korea 🇰🇷", "Australia 🇦🇺", "Nigeria 🇳🇬", "S.Africa 🇿🇦", "Uganda 🇺🇬", "Tanzania 🇹🇿", "Sudan 🇸🇩", "Pakistan 🇵🇰", "Mexico 🇲🇽", "Finland 🇫🇮", "Denmark 🇩🇰", "Oman 🇴🇲", "Kuwait 🇰🇼", "Yemen 🇾🇪", "Libya 🇱🇾", "Morocco 🇲🇦", "Netherlands 🇳🇱"]
     keyboard = [[InlineKeyboardButton(countries[i], callback_data=f"ln_{countries[i]}"), 
                   InlineKeyboardButton(countries[i+1], callback_data=f"ln_{countries[i+1]}")] for i in range(0, len(countries), 2)]
     await update.message.reply_text("Dooro Wadankaaga (Hal mar):", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -67,10 +66,10 @@ async def rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     country_list = "\n".join([f"{i+1}. {c[0]}: {c[1]}" for i, c in enumerate(top_c)])
-    rank_text = (f"📊 **University Downloader Rank**\n\n🎥 Total Video Upload: {total_dl}\n👤 Total Users: {total_users}\n📥 Your Downloads: {res[0] if res else 0}\n🏆 Your Rank: #{res[2] if res else '?'}\n📍 Country: {res[1] if res else 'Unknown'}\n\n🌍 **Top 10 Countries:**\n{country_list}")
+    rank_text = (f"📊 **Rank Statistics**\n\n🎥 Total Video Upload: {total_dl}\n👤 Total Users: {total_users}\n📥 Your Downloads: {res[0] if res else 0}\n🏆 Your Rank: #{res[2] if res else '?'}\n📍 Country: {res[1] if res else 'Unknown'}\n\n🌍 **Top 10 Countries:**\n{country_list}")
     await update.message.reply_text(rank_text, parse_mode='Markdown')
 
-# --- DOWNLOAD & AUDIO ---
+# --- CALLBACKS (Audio & Lang) ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -87,7 +86,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith('au_'):
         url = query.data.split('_', 1)[1]
         m = await query.message.reply_text("🎙️ Beddelay cod... fadlan sug.")
-        ydl_opts = {'format': 'bestaudio/best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}]}
+        ydl_opts = {'format': 'bestaudio/best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '192'}], 'quiet': True}
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -95,26 +94,38 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_audio(audio=open(path, 'rb'), caption="For You 🎙️ - @Fastdowloder1bot")
                 os.remove(path)
             await m.delete()
-        except: await m.edit_text("❌ Codka lama soo saari karo.")
+        except Exception as e:
+            await m.edit_text(f"❌ Codka lama soo saari karo.")
 
+# --- UNIVERSAL DOWNLOADER ---
 async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if not url.startswith("http"):
-        kb = [[InlineKeyboardButton("Developers - @Guspirrr", url="https://t.me/Guspirrr")]]
-        await update.message.reply_text(f"Hi {update.effective_user.first_name} I accepted Only Link 🖤", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    wait = await update.message.reply_text("🫦")
+    wait = await update.message.reply_text("⚡")
     kb = [[InlineKeyboardButton("Audio 🎙️", callback_data=f"au_{url}")], [InlineKeyboardButton("Community 🌋", url="https://t.me/cummunutry1")]]
 
     try:
-        ydl_opts = {'format': 'best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'quiet': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            path = ydl.prepare_filename(info)
-            await update.message.reply_video(video=open(path, 'rb'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
-            os.remove(path)
+        # TIKTOK (Video & Image Support)
+        if "tiktok.com" in url:
+            data = requests.get(f"https://www.tikwm.com/api/?url={url}").json().get('data')
+            if 'images' in data:
+                imgs = [InputMediaPhoto(i) for i in data['images'][:10]]
+                await update.message.reply_media_group(media=imgs, caption="For You 🎁")
+            else:
+                await update.message.reply_video(video=data.get('play'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
         
+        # UNIVERSAL (FB, IG, YT, X)
+        else:
+            ydl_opts = {'format': 'best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                path = ydl.prepare_filename(info)
+                await update.message.reply_video(video=open(path, 'rb'), caption="For You 🔥 - @Fastdowloder1bot", reply_markup=InlineKeyboardMarkup(kb))
+                os.remove(path)
+        
+        # Update Stats
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cur = conn.cursor()
         cur.execute("UPDATE users SET user_downloads = user_downloads + 1 WHERE user_id = %s", (update.effective_user.id,))
@@ -123,7 +134,8 @@ async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.close()
         conn.close()
         await wait.delete()
-    except: await wait.edit_text("Ist Brok Link ! 🤥")
+    except:
+        await wait.edit_text("Ist Brok Link ! 🤥")
 
 def main():
     if not os.path.exists('downloads'): os.makedirs('downloads')
