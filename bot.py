@@ -1,76 +1,65 @@
 import os
 import requests
 import yt_dlp
-import psycopg2
-from telegram import Update, InputMediaPhoto
+from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
 TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- DATABASE ---
-def update_stats(user_id):
-    try:
-        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-        cur = conn.cursor()
-        cur.execute('INSERT INTO users (user_id, count) VALUES (%s, 1) ON CONFLICT (user_id) DO UPDATE SET count = users.count + 1', (user_id,))
-        conn.commit()
-        cur.close()
-        conn.close()
-    except: pass
-
-# --- TIKTOK SPECIAL (Slideshow & Video) ---
+# --- 1. TIKTOK API (TikWM) ---
 def get_tiktok(url):
-    api_url = f"https://www.tikwm.com/api/?url={url}"
-    res = requests.get(api_url).json()
+    res = requests.get(f"https://www.tikwm.com/api/?url={url}").json()
     return res.get('data')
 
-# --- UNIVERSAL DOWNLOADER (YT, IG, FB) ---
+# --- 2. INSTAGRAM API (VkrDown) ---
+def get_instagram(url):
+    # API-gan wuxuu dhaafayaa Login-ka (No Login Needed)
+    res = requests.get(f"https://api.vkrdown.com/instapost/?url={url}").json()
+    return res.get('data')
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if not url.startswith("http"): return
     
-    msg = await update.message.reply_text("🚀 Jaamacadda Downloader-ka ayaa guda jirta...")
-    update_stats(update.effective_user.id)
+    msg = await update.message.reply_text("🚀 Jaamacadda Downloader-ka ayaa baaraysa link-ga...")
 
-    # 1. HADDII UU YAHAY TIKTOK
+    # A. TIKTOK LOGIC
     if "tiktok.com" in url:
         data = get_tiktok(url)
         if data and 'images' in data:
             media = [InputMediaPhoto(img) for img in data['images'][:10]]
             await update.message.reply_media_group(media=media)
-            await msg.delete()
-            return
         elif data and 'play' in data:
-            await update.message.reply_video(video=data['play'], caption="✅ TikTok-gaaga waa diyaar!")
+            await update.message.reply_video(video=data['play'], caption="✅ TikTok Video!")
+        await msg.delete()
+        return
+
+    # B. INSTAGRAM LOGIC
+    if "instagram.com" in url:
+        data = get_instagram(url)
+        if data:
+            media = []
+            for item in data[:10]:
+                if item['type'] == 'image': media.append(InputMediaPhoto(item['url']))
+                else: media.append(InputMediaVideo(item['url']))
+            await update.message.reply_media_group(media=media)
             await msg.delete()
             return
 
-    # 2. HADDII UU YAHAY PLATFORM KALE (YouTube, IG, FB, iwm)
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
-    }
-
+    # C. YOUTUBE / FB / OTHERS (yt-dlp)
+    ydl_opts = {'format': 'best', 'outtmpl': 'downloads/%(id)s.%(ext)s', 'quiet': True}
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            file_path = ydl.prepare_filename(info)
-            
-            with open(file_path, 'rb') as f:
-                if file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
-                    await update.message.reply_photo(photo=f, caption="✅ Sawirkaaga waa diyaar!")
-                else:
-                    await update.message.reply_video(video=f, caption="✅ Muuqaalkaaga waa diyaar!")
-            
-            os.remove(file_path)
-            await msg.delete()
-    except Exception as e:
-        await msg.edit_text("❌ Khalad: Link-gan lama taageero ama dhib ayaa jira.")
+            f_path = ydl.prepare_filename(info)
+            with open(f_path, 'rb') as f:
+                await update.message.reply_video(video=f, caption="✅ Soo dejintii waa diyaar!")
+            os.remove(f_path)
+    except:
+        await msg.edit_text("❌ Link-gan lama taageero ama waa Private.")
 
 def main():
+    if not os.path.exists('downloads'): os.makedirs('downloads')
     app = Application.builder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling()
