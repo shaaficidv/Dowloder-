@@ -1,9 +1,11 @@
 {
-  "name": "universal-bot",
+  "name": "fast-downloader",
   "version": "1.0.0",
   "main": "bot.js",
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0"
+    "node-telegram-bot-api": "^0.64.0",
+    "axios": "^1.6.0",
+    "pg": "^8.11.0"
   },
   "scripts": {
     "start": "node bot.js"
