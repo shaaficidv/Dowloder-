@@ -1,4 +1,0 @@
-python-telegram-bot
-yt-dlp>=2025.01.15
-requests
-psycopg2-binary
