@@ -1,21 +1,24 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { exec } = require('child_process');
-const { Client } = require('pg');
+const { Pool } = require('pg'); // Pool ayaa ka fiican Client xiriirka joogtada ah
 const fs = require('fs');
 
 const token = process.env.BOT_TOKEN;
 const ADMIN_ID = 6301321523; 
 const bot = new TelegramBot(token, { polling: { params: { drop_pending_updates: true } } });
 
-const client = new Client({
+// Database Connection with Auto-Fix for your Error
+const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
 });
 
-async function connectDB() {
+async function initDB() {
     try {
-        await client.connect();
-        await client.query(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
                 username TEXT,
@@ -24,56 +27,56 @@ async function connectDB() {
                 lang_fixed BOOLEAN DEFAULT FALSE
             );
         `);
-        console.log("Database Connected ✅");
+        console.log("Database Operational ✅");
     } catch (err) {
-        setTimeout(connectDB, 5000);
+        console.error("DB Initialization Error:", err.message);
     }
 }
-connectDB();
+initDB();
 
 // --- ADMIN PANEL ---
 bot.onText(/\/admin/, async (msg) => {
     if (msg.from.id !== ADMIN_ID) return;
-    const res = await client.query("SELECT COUNT(*) FROM users");
-    bot.sendMessage(msg.chat.id, `👑 **Admin Panel**\n\nTotal Users: ${res.rows[0].count}\n\n/broadcast [text] - Send to all\n/users - Show IDs\n/list - Leaderboard`);
+    const res = await pool.query("SELECT COUNT(*) FROM users");
+    bot.sendMessage(msg.chat.id, `👑 **Admin Panel**\n\nTotal Users: ${res.rows[0].count}\n\n/broadcast [text]\n/users - All IDs\n/list - Download Leaderboard`);
 });
 
 bot.onText(/\/broadcast (.+)/, async (msg, match) => {
     if (msg.from.id !== ADMIN_ID) return;
-    const users = await client.query("SELECT user_id FROM users");
+    const users = await pool.query("SELECT user_id FROM users");
     users.rows.forEach(u => bot.sendMessage(u.user_id, match[1]).catch(() => {}));
     bot.sendMessage(msg.chat.id, "✅ Broadcast Sent.");
 });
 
 bot.onText(/\/list/, async (msg) => {
     if (msg.from.id !== ADMIN_ID) return;
-    const res = await client.query("SELECT username, downloads FROM users ORDER BY downloads DESC LIMIT 15");
-    let text = "📋 **Leaderboard:**\n\n";
+    const res = await pool.query("SELECT username, downloads FROM users ORDER BY downloads DESC LIMIT 20");
+    let text = "📋 **User Leaderboard:**\n\n";
     res.rows.forEach(u => { text += `👤 ${u.username || 'User'} - 📥 ${u.downloads}\n`; });
     bot.sendMessage(msg.chat.id, text);
 });
 
-// --- USER COMMANDS ---
+// --- USER COMMANDS (ENGLISH) ---
 bot.onText(/\/start/, async (msg) => {
     const user = msg.from;
-    await client.query("INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET username = $2", [user.id, user.first_name]);
+    await pool.query("INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET username = $2", [user.id, user.first_name]);
     bot.sendMessage(msg.chat.id, `Hi ${user.first_name}, send any link ✨`, {
         reply_markup: { inline_keyboard: [[{ text: "Discord 🔗", url: "https://discord.gg/j6WZkksV8" }]] }
     });
 });
 
 bot.onText(/\/rank/, async (msg) => {
-    const userRes = await client.query("SELECT downloads, country FROM users WHERE user_id = $1", [msg.from.id]);
-    const totalRes = await client.query("SELECT SUM(downloads) as total FROM users");
-    const topCountry = await client.query("SELECT country, COUNT(*) as count FROM users WHERE country != 'Unknown' GROUP BY country ORDER BY count DESC LIMIT 1");
+    const userRes = await pool.query("SELECT downloads, country FROM users WHERE user_id = $1", [msg.from.id]);
+    const totalRes = await pool.query("SELECT SUM(downloads) as total FROM users");
+    const topCountry = await pool.query("SELECT country, COUNT(*) as count FROM users WHERE country != 'Unknown' GROUP BY country ORDER BY count DESC LIMIT 1");
     
     const user = userRes.rows[0];
-    let text = `📊 **Rank Stats**\n\n📥 Global Downloads: ${totalRes.rows[0].total || 0}\n🌍 Top Country: ${topCountry.rows[0]?.country || 'None'}\n📅 Rank Started: Feb 2026\n\n👤 **Your Info:**\n📍 Country: ${user?.country || 'Not Set'}\n📥 Downloads: ${user?.downloads || 0}`;
+    let text = `📊 **Rank Stats**\n\n📥 Global Downloads: ${totalRes.rows[0].total || 0}\n🌍 Top Country: ${topCountry.rows[0]?.country || 'None'}\n📅 Rank Started: Feb 2026\n\n👤 **Your Stats:**\n📍 Country: ${user?.country || 'Not Set'}\n📥 Downloads: ${user?.downloads || 0}`;
     bot.sendMessage(msg.chat.id, text);
 });
 
 bot.onText(/\/lang/, async (msg) => {
-    const res = await client.query("SELECT lang_fixed FROM users WHERE user_id = $1", [msg.from.id]);
+    const res = await pool.query("SELECT lang_fixed FROM users WHERE user_id = $1", [msg.from.id]);
     if (res.rows[0]?.lang_fixed) return bot.sendMessage(msg.chat.id, "❌ Error: Country selection is permanent.");
 
     const countries = ["Somalia 🇸🇴", "USA 🇺🇸", "UK 🇬🇧", "Kenya 🇰🇪", "Turkey 🇹🇷", "UAE 🇦🇪", "Canada 🇨🇦", "Sweden 🇸🇪"];
@@ -81,7 +84,7 @@ bot.onText(/\/lang/, async (msg) => {
     bot.sendMessage(msg.chat.id, "Select your country (One-time only):", { reply_markup: { inline_keyboard: keyboard } });
 });
 
-// --- UNIVERSAL DOWNLOADER (SNAP, IG, FB, YT, TIKTOK, X, ETC.) ---
+// --- UNIVERSAL ENGINE (SNAP, IG, FB, YT, TIKTOK, ETC.) ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const url = msg.text;
@@ -91,7 +94,7 @@ bot.on('message', async (msg) => {
     const wait = await bot.sendMessage(chatId, "✨");
 
     const output = `downloads/${Date.now()}.mp4`;
-    // This command is the secret to downloading EVERYTHING
+    // The Ultimate Universal Downloader Command
     const cmd = `yt-dlp -f "best" --no-check-certificate --user-agent "Mozilla/5.0" -o "${output}" "${url}"`;
 
     exec(cmd, async (err) => {
@@ -102,7 +105,7 @@ bot.on('message', async (msg) => {
             reply_markup: { inline_keyboard: [[{ text: "Audio 🎙️", callback_data: `au_${url}` }], [{ text: "Community 🌋", url: "https://t.me/cummunutry1" }]] }
         });
         
-        await client.query("UPDATE users SET downloads = downloads + 1 WHERE user_id = $1", [chatId]);
+        await pool.query("UPDATE users SET downloads = downloads + 1 WHERE user_id = $1", [chatId]);
         bot.deleteMessage(chatId, wait.message_id);
         if (fs.existsSync(output)) fs.unlinkSync(output);
     });
@@ -111,7 +114,7 @@ bot.on('message', async (msg) => {
 bot.on('callback_query', async (q) => {
     if (q.data.startsWith('ln_')) {
         const c = q.data.split('_')[1];
-        await client.query("UPDATE users SET country = $1, lang_fixed = TRUE WHERE user_id = $2", [c, q.from.id]);
+        await pool.query("UPDATE users SET country = $1, lang_fixed = TRUE WHERE user_id = $2", [c, q.from.id]);
         bot.answerCallbackQuery(q.id, { text: "Saved!" });
         bot.sendMessage(q.message.chat.id, `✅ Country set to: ${c}`);
     }
